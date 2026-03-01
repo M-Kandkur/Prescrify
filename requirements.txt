@@ -1,0 +1,12 @@
+streamlit
+crewai
+litellm
+groq
+pandas
+pytesseract
+easyocr
+pdf2image
+pillow
+streamlit-folium
+folium
+requests
