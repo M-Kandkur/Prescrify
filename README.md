@@ -17,3 +17,6 @@
 1. Push to GitHub
 2. Deploy on share.streamlit.io
 3. Add GROQ_API_KEY in secrets
+
+##Demo
+https://prescrify.streamlit.app/
