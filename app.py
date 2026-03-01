@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import os
 import json
-import pytesseract
 import easyocr
 from PIL import Image
 from crewai import Agent, Task, Crew, LLM
@@ -13,7 +12,7 @@ from groq import Groq
 # CONFIG
 # ══════════════════════════════════════════════
 st.set_page_config(
-    page_title="ArogyadhanaRaksha AI 💊",
+    page_title="Prescrify 💊",
     page_icon="💊",
     layout="wide"
 )
@@ -30,17 +29,34 @@ def get_groq_key():
 auto_key = get_groq_key()
 
 # ══════════════════════════════════════════════
-# LOAD DATA
+# LOAD DATA FROM URL — NO CSV NEEDED!
 # ══════════════════════════════════════════════
 @st.cache_data
 def load_data():
-    return pd.read_csv("medicines_clean.csv")
+    url = "https://github.com/junioralive/Indian-Medicine-Dataset/blob/main/DATA/indian_medicine_data.csv?raw=true"
+    with st.spinner("🔄 Loading 253,973 Indian medicines..."):
+        df = pd.read_csv(url)
+
+    # Clean
+    df = df[df["Is_discontinued"] == False]
+    df["composition"] = df["short_composition1"].fillna("") + \
+        df["short_composition2"].apply(
+            lambda x: " + " + x if pd.notna(x) and x != "" else ""
+        )
+    df["price(₹)"] = pd.to_numeric(df["price(₹)"], errors="coerce")
+    df = df.dropna(subset=["price(₹)"])
+    df = df[df["price(₹)"] > 0]
+    df["name"]               = df["name"].str.strip()
+    df["manufacturer_name"]  = df["manufacturer_name"].str.strip()
+    df["composition"]        = df["composition"].str.strip()
+    df = df.drop_duplicates(subset=["name"])
+    return df
 
 df = load_data()
 
 # ══════════════════════════════════════════════
 # CORE FUNCTIONS
-# ══════════════════════════════════════════════
+# ═════════════════════════════��════════════════
 def find_alternatives(medicine_name):
     searched = df[
         df["name"].str.lower().str.contains(
@@ -99,13 +115,11 @@ def detect_overcharge(medicine_name, billed_price):
     }
 
 def extract_text_from_image(image):
-    """Extract text from prescription/bill image"""
     reader = easyocr.Reader(["en"], verbose=False)
     result = reader.readtext(image, detail=0)
     return " ".join(result)
 
 def extract_medicines_with_ai(text, groq_key):
-    """Use Groq LLM to extract medicine names from OCR text"""
     client = Groq(api_key=groq_key)
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -127,26 +141,22 @@ def extract_medicines_with_ai(text, groq_key):
     )
     raw = response.choices[0].message.content.strip()
     try:
-        # Try parsing as JSON
         parsed = json.loads(raw)
         if isinstance(parsed, list):
             return parsed, []
         elif isinstance(parsed, dict):
             return parsed.get("medicines", []), parsed.get("bill_items", [])
     except:
-        # Fallback: extract quoted strings
         import re
         medicines = re.findall(r'"([^"]+)"', raw)
         return medicines, []
 
 def get_jan_aushadhi_stores(pincode):
-    """Get nearby Jan Aushadhi stores"""
-    # Hardcoded sample data (replace with real API if available)
     stores = [
-        {"name": "Jan Aushadhi Kendra 1", "address": f"Near Market, {pincode}",    "distance": "0.5 km", "lat": 19.076, "lon": 72.877},
-        {"name": "Jan Aushadhi Kendra 2", "address": f"Main Road, {pincode}",      "distance": "1.2 km", "lat": 19.079, "lon": 72.880},
-        {"name": "Jan Aushadhi Kendra 3", "address": f"Gandhi Nagar, {pincode}",   "distance": "2.1 km", "lat": 19.072, "lon": 72.870},
-        {"name": "Generic Pharmacy",      "address": f"Hospital Road, {pincode}",  "distance": "2.8 km", "lat": 19.068, "lon": 72.865},
+        {"name": "Jan Aushadhi Kendra 1", "address": f"Near Market, {pincode}",   "distance": "0.5 km"},
+        {"name": "Jan Aushadhi Kendra 2", "address": f"Main Road, {pincode}",     "distance": "1.2 km"},
+        {"name": "Jan Aushadhi Kendra 3", "address": f"Gandhi Nagar, {pincode}",  "distance": "2.1 km"},
+        {"name": "Generic Pharmacy",      "address": f"Hospital Road, {pincode}", "distance": "2.8 km"},
     ]
     return stores
 
@@ -154,8 +164,8 @@ def get_jan_aushadhi_stores(pincode):
 # SIDEBAR
 # ══════════════════════════════════════════════
 st.sidebar.image("https://img.icons8.com/color/96/medical-doctor.png", width=60)
-st.sidebar.title("ArogyadhanaRaksha AI")
-st.sidebar.markdown("*Your Healthcare Savings Assistant*")
+st.sidebar.title("Prescrify")
+st.sidebar.markdown("*Simplify your prescription*")
 st.sidebar.markdown("---")
 
 if auto_key:
@@ -173,8 +183,7 @@ st.sidebar.success(f"📊 **{len(df):,}** Indian medicines")
 st.sidebar.info("🤖 Llama 3.3 70B (Groq)")
 st.sidebar.info("🇮🇳 NPPA Verified Data")
 st.sidebar.markdown("---")
-st.sidebar.markdown("**Navigation**")
-page = st.sidebar.radio("Go to:", [
+page = st.sidebar.radio("Navigation", [
     "🔍 Medicine Search",
     "📄 Prescription Analyzer",
     "🧾 Bill Overcharge Detector",
@@ -185,13 +194,13 @@ page = st.sidebar.radio("Go to:", [
 # ══════════════════════════════════════════════
 # HEADER
 # ══════════════════════════════════════════════
-st.title("💊 ArogyadhanaRaksha AI")
-st.markdown("> 🇮🇳 Empowering Indian patients with **affordable healthcare** — search from **253,973 real medicines**, detect overcharges, and save money on every prescription!")
+st.title("💊 Prescrify")
+st.markdown("> 🇮🇳 Simplify prescriptions, detect overcharges & find generic alternatives — powered by **253,973 real Indian medicines** + **Llama 3.3 70B**!")
 st.markdown("---")
 
 # ══════════════════════════════════════════════
 # PAGE 1 — MEDICINE SEARCH
-# ═���════════════════════════════════════════════
+# ══════════════════════════════════════════════
 if page == "🔍 Medicine Search":
     st.header("🔍 Medicine Search & Generic Alternatives")
     st.markdown("Find cheaper alternatives with same composition")
@@ -208,10 +217,9 @@ if page == "🔍 Medicine Search":
 
     if search_btn and medicine_input:
         result = find_alternatives(medicine_input)
-
         if result is None:
             st.error(f"❌ **{medicine_input}** not found!")
-            st.info("💡 Try partial name e.g. **Augmentin** instead of **Augmentin 625 Duo Tablet**")
+            st.info("💡 Try partial name e.g. **Augmentin** instead of full name")
         else:
             st.success(f"✅ Found: **{result['original_name']}**")
 
@@ -225,8 +233,8 @@ if page == "🔍 Medicine Search":
                     f"{result['alternatives'][0]['saving_pct']}% cheaper"
                 )
 
-            st.markdown("### 🔬 Prescription Analysis")
-            st.info(f"**Composition:** {result['original_composition']}")
+            st.markdown("### 🔬 Composition")
+            st.info(f"**{result['original_composition']}**")
             c1, c2 = st.columns(2)
             c1.markdown(f"📦 **Pack:** {result['original_pack']}")
             c2.markdown(f"🏭 **By:** {result['original_manufacturer']}")
@@ -234,9 +242,7 @@ if page == "🔍 Medicine Search":
 
             cheaper = [a for a in result["alternatives"] if a["saving"] > 0]
             if cheaper:
-                st.markdown(f"### ✅ {len(cheaper)} Generic Alternatives Found")
-                st.caption("Same composition • Same effect • Lower price")
-
+                st.markdown(f"### ✅ {len(cheaper)} Generic Alternatives")
                 for i, alt in enumerate(cheaper[:8], 1):
                     cols = st.columns([3, 2, 2, 2])
                     label = f"🏆 **{alt['name']}**" if i == 1 else f"**{i}.** {alt['name']}"
@@ -244,15 +250,14 @@ if page == "🔍 Medicine Search":
                     cols[1].markdown(f"₹**{alt['price']}**")
                     cols[2].markdown(f"💚 Save ₹**{alt['saving']}** ({alt['saving_pct']}%)")
                     cols[3].markdown(f"*{alt['manufacturer']}*")
-                    st.caption(f"📦 {alt['pack_size']}")
                     st.markdown("---")
 
                 best = cheaper[0]
                 st.success(f"""
-                ### 🏆 Best Choice: {best['name']}
-                | Per Strip | Per Month (2 strips) | Per Year |
+                ### 🏆 Best: {best['name']}
+                | Per Strip | Per Month | Per Year |
                 |---|---|---|
-                | 💚 ₹{best['saving']} saved | 💚 ₹{round(best['saving']*2,2)} saved | 💚 ₹{round(best['saving']*24,2)} saved |
+                | 💚 ₹{best['saving']} | 💚 ₹{round(best['saving']*2,2)} | 💚 ₹{round(best['saving']*24,2)} |
                 """)
             else:
                 st.info("✅ Already the most affordable option!")
@@ -278,14 +283,14 @@ if page == "🔍 Medicine Search":
                                 description=f"""
                                 Medicine: {medicine_input}
                                 Composition: {result['original_composition']}
-                                Give in simple terms for Indian patients:
+                                Tell Indian patients in simple terms:
                                 1. What is this used for?
                                 2. Is switching to generic safe?
                                 3. Any precautions?
-                                Keep it brief.
+                                Keep it brief and simple.
                                 """,
                                 agent=agent,
-                                expected_output="Simple medical insights"
+                                expected_output="Simple medical insights for patients"
                             )
                             crew = Crew(agents=[agent], tasks=[task], verbose=False)
                             st.markdown(str(crew.kickoff()))
@@ -301,10 +306,10 @@ if page == "🔍 Medicine Search":
 
 # ══════════════════════════════════════════════
 # PAGE 2 — PRESCRIPTION ANALYZER
-# ══════════════════════════════════════════════
+# ��═════════════════════════════════════════════
 elif page == "📄 Prescription Analyzer":
     st.header("📄 Prescription Analyzer")
-    st.markdown("Upload prescription image → AI extracts medicines → Find alternatives")
+    st.markdown("Upload prescription → AI extracts medicines → Find alternatives instantly")
 
     if not groq_key:
         st.warning("🔑 Please add your Groq API key in the sidebar!")
@@ -314,10 +319,9 @@ elif page == "📄 Prescription Analyzer":
         with tab1:
             uploaded = st.file_uploader(
                 "Upload Prescription or Bill",
-                type=["jpg", "jpeg", "png", "pdf"],
+                type=["jpg", "jpeg", "png"],
                 help="Take a photo of your prescription or bill"
             )
-
             if uploaded:
                 image = Image.open(uploaded)
                 st.image(image, caption="Uploaded Prescription", use_container_width=True)
@@ -326,8 +330,8 @@ elif page == "📄 Prescription Analyzer":
                     with st.spinner("📖 Reading prescription with OCR..."):
                         try:
                             import numpy as np
-                            img_array  = np.array(image)
-                            ocr_text   = extract_text_from_image(img_array)
+                            img_array = np.array(image)
+                            ocr_text  = extract_text_from_image(img_array)
                             st.markdown("**📝 Extracted Text:**")
                             st.code(ocr_text)
                         except Exception as e:
@@ -340,10 +344,6 @@ elif page == "📄 Prescription Analyzer":
 
                         if medicines:
                             st.success(f"✅ Found {len(medicines)} medicines: {', '.join(medicines)}")
-                            st.session_state["extracted_medicines"] = medicines
-                            st.session_state["bill_items"]          = bill_items
-
-                            st.markdown("### 💊 Medicine Analysis")
                             total_saving = 0
                             for med in medicines:
                                 result = find_alternatives(med)
@@ -354,10 +354,9 @@ elif page == "📄 Prescription Analyzer":
                                         if cheaper:
                                             best          = cheaper[0]
                                             total_saving += best["saving"]
-                                            st.success(f"✅ Best Alternative: **{best['name']}** — ₹{best['price']} (Save ₹{best['saving']})")
+                                            st.success(f"✅ Best: **{best['name']}** — ₹{best['price']} (Save ₹{best['saving']})")
                                         else:
                                             st.info("Already cheapest!")
-
                             if total_saving > 0:
                                 st.success(f"### 💰 Total Savings Possible: ₹{round(total_saving, 2)}")
                         else:
@@ -365,8 +364,8 @@ elif page == "📄 Prescription Analyzer":
 
         with tab2:
             manual_text = st.text_area(
-                "Type or paste medicine names (one per line)",
-                placeholder="Augmentin 625\nDolo 650\nPantop 40\nAzithral 500",
+                "Type medicine names (one per line)",
+                placeholder="Augmentin 625\nDolo 650\nPantop 40",
                 height=150
             )
             if st.button("🔍 Find Alternatives", type="primary"):
@@ -393,9 +392,8 @@ elif page == "📄 Prescription Analyzer":
 # ══════════════════════════════════════════════
 elif page == "🧾 Bill Overcharge Detector":
     st.header("🧾 Medical Bill Overcharge Detector")
-    st.markdown("Enter your bill items → We check for overcharges instantly!")
+    st.markdown("Enter your bill → We detect overcharges instantly!")
 
-    st.markdown("### Add Bill Items")
     num_items = st.number_input("Number of medicines in bill", min_value=1, max_value=20, value=3)
 
     bill_items = []
@@ -405,10 +403,8 @@ elif page == "🧾 Bill Overcharge Detector":
 
     for i in range(num_items):
         c1, c2 = st.columns([3, 2])
-        name  = c1.text_input(f"Medicine {i+1}", key=f"med_{i}",
-                               placeholder="e.g. Augmentin 625")
-        price = c2.number_input(f"Price {i+1}", key=f"price_{i}",
-                                 min_value=0.0, value=0.0, step=0.5)
+        name  = c1.text_input(f"Medicine {i+1}", key=f"med_{i}",  placeholder="e.g. Augmentin 625")
+        price = c2.number_input(f"Price {i+1}",  key=f"price_{i}", min_value=0.0, value=0.0, step=0.5)
         if name and price > 0:
             bill_items.append({"name": name, "billed_price": price})
 
@@ -419,9 +415,8 @@ elif page == "🧾 Bill Overcharge Detector":
             total_overcharge = 0
             total_billed     = 0
             total_actual     = 0
-            flagged          = []
 
-            st.markdown("### 📊 Bill Analysis Results")
+            st.markdown("### 📊 Results")
             for item in bill_items:
                 result = detect_overcharge(item["name"], item["billed_price"])
                 if result:
@@ -429,48 +424,47 @@ elif page == "🧾 Bill Overcharge Detector":
                     total_actual += result["actual_price"]
                     if result["is_overcharged"]:
                         total_overcharge += result["overcharge"]
-                        flagged.append(result)
                         st.error(f"""
-                        ⚠️ **OVERCHARGE DETECTED: {result['medicine']}**
-                        - Billed Price  : ₹{result['billed_price']}
-                        - Standard Price: ₹{result['actual_price']}
-                        - Overcharged by: ₹{result['overcharge']} ({result['overcharge_pct']}% extra!)
+                        ⚠️ **OVERCHARGE: {result['medicine']}**
+                        - Billed  : ₹{result['billed_price']}
+                        - Actual  : ₹{result['actual_price']}
+                        - Extra   : ₹{result['overcharge']} ({result['overcharge_pct']}% overcharged!)
                         """)
                     else:
-                        st.success(f"✅ **{result['medicine']}** — ₹{result['billed_price']} (Fair price!)")
+                        st.success(f"✅ **{result['medicine']}** — ₹{result['billed_price']} (Fair!)")
                 else:
-                    st.info(f"ℹ️ {item['name']} — Not found in database")
+                    st.info(f"ℹ️ {item['name']} — Not in database")
 
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
-            c1.metric("💳 Total Billed",      f"₹{round(total_billed, 2)}")
-            c2.metric("✅ Should Have Paid",   f"₹{round(total_actual, 2)}")
-            c3.metric("🚨 Total Overcharged",  f"₹{round(total_overcharge, 2)}",
+            c1.metric("💳 Total Billed",    f"₹{round(total_billed,2)}")
+            c2.metric("✅ Should Have Paid", f"₹{round(total_actual,2)}")
+            c3.metric("🚨 Overcharged",      f"₹{round(total_overcharge,2)}",
                       delta=f"-₹{round(total_overcharge,2)}" if total_overcharge > 0 else None,
                       delta_color="inverse")
 
-            if flagged:
-                st.error(f"🚨 You were overcharged ₹{round(total_overcharge,2)} on {len(flagged)} item(s)!")
-                st.markdown("**💡 What to do:**")
+            if total_overcharge > 0:
+                st.error(f"🚨 You were overcharged ₹{round(total_overcharge,2)}!")
                 st.markdown("""
+                **💡 What to do:**
                 1. Show this report to the hospital/pharmacy
                 2. Ask for a corrected bill
-                3. File complaint at: **nhrc.nic.in** or call **104**
+                3. File complaint: **nhrc.nic.in** or call **104**
                 4. NPPA complaint: **nppa.gov.in**
                 """)
             else:
-                st.success("✅ All prices are within normal range!")
+                st.success("✅ All prices are fair!")
 
 # ══════════════════════════════════════════════
 # PAGE 4 — SAVINGS DASHBOARD
 # ══════════════════════════════════════════════
 elif page == "💰 Savings Dashboard":
     st.header("💰 Savings Dashboard")
-    st.markdown("See how much you can save by switching to generics")
+    st.markdown("See how much you save by switching to generics")
 
     medicines_input = st.text_area(
         "Enter your regular medicines (one per line)",
-        placeholder="Augmentin 625\nDolo 650\nPantop 40\nAzithral 500\nCrocin 500",
+        placeholder="Augmentin 625\nDolo 650\nPantop 40\nAzithral 500",
         height=150
     )
 
@@ -479,58 +473,54 @@ elif page == "💰 Savings Dashboard":
         if not medicines:
             st.warning("Please enter at least one medicine!")
         else:
-            results      = []
-            total_current = 0
+            results        = []
+            total_current  = 0
             total_cheapest = 0
 
             for med in medicines:
                 result = find_alternatives(med)
                 if result:
                     total_current += result["original_price"]
-                    cheaper = [a for a in result["alternatives"] if a["saving"] > 0]
+                    cheaper    = [a for a in result["alternatives"] if a["saving"] > 0]
                     best_price = cheaper[0]["price"] if cheaper else result["original_price"]
                     best_name  = cheaper[0]["name"]  if cheaper else result["original_name"]
                     best_save  = cheaper[0]["saving"] if cheaper else 0
                     total_cheapest += best_price
                     results.append({
-                        "Medicine"     : result["original_name"],
-                        "Your Price"   : f"₹{result['original_price']}",
-                        "Cheapest Alt" : best_name,
-                        "Alt Price"    : f"₹{best_price}",
-                        "You Save"     : f"₹{best_save}",
-                        "Saving %"     : f"{round((best_save/result['original_price'])*100,1)}%" if result["original_price"] > 0 else "0%"
+                        "Medicine"    : result["original_name"],
+                        "Your Price"  : f"₹{result['original_price']}",
+                        "Cheapest Alt": best_name,
+                        "Alt Price"   : f"₹{best_price}",
+                        "You Save"    : f"₹{best_save}",
+                        "Saving %"    : f"{round((best_save/result['original_price'])*100,1)}%" if result["original_price"] > 0 else "0%"
                     })
 
             total_saving = round(total_current - total_cheapest, 2)
 
-            # Big metrics
             c1, c2, c3 = st.columns(3)
-            c1.metric("💳 Current Spend (per cycle)", f"₹{round(total_current, 2)}")
-            c2.metric("💚 With Generics",             f"₹{round(total_cheapest, 2)}")
-            c3.metric("💰 Total Savings",             f"₹{total_saving}",
+            c1.metric("💳 Current Spend",  f"₹{round(total_current,2)}")
+            c2.metric("💚 With Generics",  f"₹{round(total_cheapest,2)}")
+            c3.metric("💰 Total Savings",  f"₹{total_saving}",
                       delta=f"Save {round((total_saving/total_current)*100,1)}%" if total_current > 0 else None)
 
             st.markdown("---")
-
-            # Monthly/Yearly projection
             c1, c2, c3 = st.columns(3)
-            c1.metric("📅 Monthly Savings",  f"₹{round(total_saving*2, 2)}")
-            c2.metric("📆 Yearly Savings",   f"₹{round(total_saving*24, 2)}")
-            c3.metric("🏥 Medicines Checked", len(results))
+            c1.metric("📅 Monthly Savings", f"₹{round(total_saving*2,2)}")
+            c2.metric("📆 Yearly Savings",  f"₹{round(total_saving*24,2)}")
+            c3.metric("💊 Medicines",        len(results))
 
-            # Table
-            st.markdown("### 📋 Medicine-wise Breakdown")
+            st.markdown("### 📋 Breakdown")
             st.dataframe(pd.DataFrame(results), use_container_width=True)
 
             if total_saving > 0:
-                st.success(f"🎉 Switch to generics and save **₹{round(total_saving*24,2)} per year!**")
+                st.success(f"🎉 Switch to generics → Save **₹{round(total_saving*24,2)} per year!**")
 
 # ══════════════════════════════════════════════
 # PAGE 5 — NEARBY STORE LOCATOR
 # ══════════════════════════════════════════════
 elif page == "🏪 Nearby Store Locator":
     st.header("🏪 Nearby Government Medicine Store Locator")
-    st.markdown("Find nearest Jan Aushadhi stores and generic pharmacies")
+    st.markdown("Find nearest Jan Aushadhi stores near you!")
 
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -540,47 +530,31 @@ elif page == "🏪 Nearby Store Locator":
         locate_btn = st.button("📍 Find Stores", type="primary", use_container_width=True)
 
     if locate_btn and pincode:
-        with st.spinner("🔍 Finding nearby stores..."):
-            stores = get_jan_aushadhi_stores(pincode)
-
+        stores = get_jan_aushadhi_stores(pincode)
         st.success(f"✅ Found {len(stores)} stores near {pincode}")
 
         for i, store in enumerate(stores, 1):
-            with st.container():
-                c1, c2, c3 = st.columns([3, 2, 2])
-                c1.markdown(f"**{i}. {store['name']}**\n\n📍 {store['address']}")
-                c2.metric("📏 Distance", store["distance"])
-                c3.markdown("<br>", unsafe_allow_html=True)
-                c3.markdown("🟢 Open • Generic medicines available")
-                st.markdown("---")
+            c1, c2, c3 = st.columns([3, 2, 2])
+            c1.markdown(f"**{i}. {store['name']}**\n\n📍 {store['address']}")
+            c2.metric("📏 Distance", store["distance"])
+            c3.markdown("🟢 Open • Generics available")
+            st.markdown("---")
 
         st.info("""
         💡 **About Jan Aushadhi Stores:**
-        - Government subsidized generic medicines
-        - Savings of 50-90% vs branded medicines
+        - Save 50-90% vs branded medicines
         - Same quality, same composition
         - 10,000+ stores across India
-        - Find official stores: **janaushadhi.gov.in**
+        - Official: **janaushadhi.gov.in**
         """)
 
-        st.markdown("### 🔗 Official Resources")
-        col1, col2 = st.columns(2)
-        col1.markdown("""
-        - 🏥 [Jan Aushadhi Portal](https://janaushadhi.gov.in)
-        - 💊 [NPPA Medicine Prices](https://nppa.gov.in)
-        """)
-        col2.markdown("""
-        - 📞 Helpline: 1800-111-255
-        - 📱 PM-JAY: 14555
-        """)
-
-# ══════════════════════════════════════════════
+# ══════════════��═══════════════════════════════
 # FOOTER
 # ══════════════════════════════════════════════
 st.markdown("---")
 st.markdown("""
 <div style="text-align:center; color:gray; font-size:12px;">
-💊 ArogyadhanaRaksha AI | AMD Slingshot Hackathon 2026 |
+💊 Prescrify | AMD Slingshot Hackathon 2026 |
 Built with CrewAI + Groq + Llama 3.3 70B + 253,973 Indian Medicines 🇮🇳
 </div>
 """, unsafe_allow_html=True)
